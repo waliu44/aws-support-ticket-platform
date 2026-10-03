@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Support Ticket Platform</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 0 20px;
+      background: #f5f7fb;
+      color: #172033;
+    }
+    form, article {
+      background: white;
+      padding: 20px;
+      margin-bottom: 16px;
+      border-radius: 8px;
+    }
+    label { display: block; margin-top: 12px; }
+    input, textarea {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 10px;
+      margin-top: 6px;
+    }
+    button {
+      margin-top: 12px;
+      padding: 10px 16px;
+      cursor: pointer;
+    }
+    .description { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Support Ticket Platform</h1>
+
+  <h2>Create a ticket</h2>
+  <form action="{{ url_for('create_ticket') }}" method="post">
+    <label for="title">Title</label>
+    <input id="title" name="title" maxlength="150" required>
+
+    <label for="description">Description</label>
+    <textarea id="description" name="description" rows="4"></textarea>
+
+    <button type="submit">Create ticket</button>
+  </form>
+
+  <h2>Tickets</h2>
+
+  {% for ticket in tickets %}
+    <article>
+      <h3>#{{ ticket.id }} — {{ ticket.title }}</h3>
+      <p class="description">{{ ticket.description }}</p>
+      <p><strong>Status:</strong> {{ ticket.status }}</p>
+      <p>
+        <strong>Created:</strong>
+        {{ ticket.created_at.strftime('%Y-%m-%d %H:%M') }} UTC
+      </p>
+
+      {% if ticket.status == "Open" %}
+        <form
+          action="{{ url_for('resolve_ticket', ticket_id=ticket.id) }}"
+          method="post"
+        >
+          <button type="submit">Resolve ticket</button>
+        </form>
+      {% endif %}
+    </article>
+  {% else %}
+    <p>No tickets yet. Create your first one above.</p>
+  {% endfor %}
+</body>
+</html>
