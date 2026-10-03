@@ -100,3 +100,18 @@ resource "aws_route_table_association" "database" {
   subnet_id      = aws_subnet.database[count.index].id
   route_table_id = aws_route_table.database.id
 }
+resource "aws_subnet" "database_extra" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.20.13.0/24"
+  availability_zone       = "us-east-2c"
+  map_public_ip_on_launch = false
+
+  tags = {
+    Name = "ticket-database-extra"
+  }
+}
+
+resource "aws_route_table_association" "database_extra" {
+  subnet_id      = aws_subnet.database_extra.id
+  route_table_id = aws_route_table.database.id
+}
