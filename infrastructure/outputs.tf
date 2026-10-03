@@ -25,3 +25,23 @@ output "application_security_group_id" {
 output "database_security_group_id" {
   value = aws_security_group.database.id
 }
+
+output "database_address" {
+  value = aws_db_instance.tickets.address
+}
+
+output "database_port" {
+  value = aws_db_instance.tickets.port
+}
+
+output "database_name" {
+  value = aws_db_instance.tickets.db_name
+}
+
+output "database_admin_secret_arn" {
+  value = aws_db_instance.tickets.master_user_secret[0].secret_arn
+}
+
+output "database_application_secret_arn" {
+  value = aws_secretsmanager_secret.application_database.arn
+}
