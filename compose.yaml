@@ -15,5 +15,15 @@ services:
       timeout: 5s
       retries: 10
 
+  web:
+    image: support-ticket-app
+    environment:
+      DATABASE_URL: postgresql+psycopg://ticket_user:${LOCAL_DB_PASSWORD:?Set LOCAL_DB_PASSWORD in .env}@db:5432/tickets
+    ports:
+      - "127.0.0.1:5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   ticket_data:
