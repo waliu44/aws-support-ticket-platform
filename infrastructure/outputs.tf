@@ -45,3 +45,26 @@ output "database_admin_secret_arn" {
 output "database_application_secret_arn" {
   value = aws_secretsmanager_secret.application_database.arn
 }
+output "ecr_repository_url" {
+  value = aws_ecr_repository.application.repository_url
+}
+
+output "ecs_cluster_name" {
+  value = aws_ecs_cluster.application.name
+}
+
+output "ecs_service_name" {
+  value = aws_ecs_service.application.name
+}
+
+output "application_task_definition_arn" {
+  value = aws_ecs_task_definition.application.arn
+}
+
+output "application_url" {
+  value = "http://${aws_lb.application.dns_name}"
+}
+
+output "application_log_group" {
+  value = aws_cloudwatch_log_group.application.name
+}

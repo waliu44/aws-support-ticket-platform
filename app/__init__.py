@@ -5,7 +5,7 @@ import click
 from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import select
+from sqlalchemy import URL, select
 
 db = SQLAlchemy()
 
@@ -27,7 +27,17 @@ def create_app(test_config=None):
 
     app = Flask(__name__)
 
+
+def create_app(test_config=None):
+    load_dotenv()
+
+    app = Flask(__name__)
+
     app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+    if test_config:
+        app.config.update(test_config)
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
     if test_config:
