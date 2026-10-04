@@ -27,24 +27,49 @@ def create_app(test_config=None):
 
     app = Flask(__name__)
 
+    database_url = os.getenv("DATABASE_URL")
 
-def create_app(test_config=None):
-    load_dotenv()
+    if not database_url:
+        required_settings = [
+            "DB_HOST",
+            "DB_NAME",
+            "DB_USERNAME",
+            "DB_PASSWORD",
+        ]
 
-    app = Flask(__name__)
+        missing = [
+            name for name in required_settings
+            if not os.getenv(name)
+        ]
 
-    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
+        if missing:
+            raise RuntimeError(
+                "Missing database settings: " + ", ".join(missing)
+            )
+
+        connection_options = {
+            "sslmode": os.getenv("DB_SSLMODE", "require")
+        }
+
+        root_certificate = os.getenv("DB_SSLROOTCERT")
+        if root_certificate:
+            connection_options["sslrootcert"] = root_certificate
+
+        database_url = URL.create(
+            drivername="postgresql+psycopg",
+            username=os.environ["DB_USERNAME"],
+            password=os.environ["DB_PASSWORD"],
+            host=os.environ["DB_HOST"],
+            port=int(os.getenv("DB_PORT", "5432")),
+            database=os.environ["DB_NAME"],
+            query=connection_options,
+        )
+
+    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
     if test_config:
         app.config.update(test_config)
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-    if test_config:
-        app.config.update(test_config)
-
-    if not app.config["SQLALCHEMY_DATABASE_URI"]:
-        raise RuntimeError("DATABASE_URL is missing. Check your .env file.")
 
     db.init_app(app)
 
