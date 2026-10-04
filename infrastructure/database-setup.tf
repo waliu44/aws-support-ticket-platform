@@ -46,10 +46,10 @@ resource "aws_ecs_task_definition" "database_setup" {
       {
         name    = "database-setup"
         command = ["python", "-m", "app.setup_database"]
-	
-mountPoints    = []
-systemControls = []
-volumesFrom    = []
+
+        mountPoints    = []
+        systemControls = []
+        volumesFrom    = []
 
 
         secrets = [
