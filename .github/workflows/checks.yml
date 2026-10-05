@@ -55,13 +55,24 @@ jobs:
       - name: Build application image
         run: docker build --pull -t support-ticket-app:checks .
 
-      - name: Scan image for vulnerabilities
+      - name: Report all high and critical vulnerabilities
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: support-ticket-app:checks
           format: table
           scanners: vuln
           severity: HIGH,CRITICAL
+          ignore-unfixed: "false"
+          exit-code: "0"
+
+      - name: Block vulnerabilities with available fixes
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: support-ticket-app:checks
+          format: table
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: "true"
           exit-code: "1"
 
   infrastructure:
