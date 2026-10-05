@@ -1,3 +1,129 @@
+name: Deploy application to AWS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: support-ticket-aws-deployment
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    name: Run project checks
+    uses: ./.github/workflows/checks.yml
+
+  deploy:
+    name: Deploy and verify application
+    needs: checks
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      AWS_REGION: us-east-2
+      ECR_REGISTRY: 734754909634.dkr.ecr.us-east-2.amazonaws.com
+      ECR_REPOSITORY: support-ticket-app
+      ECS_CLUSTER: ticket-cluster
+      ECS_SERVICE: ticket-service
+      CONTAINER_NAME: web
+      HEALTH_URL: http://ticket-load-balancer-1616348437.us-east-2.elb.amazonaws.com/health
+
+    steps:
+      - name: Download repository code
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Build application image
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build --pull --platform linux/amd64 \
+            -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" .
+
+      - name: Scan the image that will be deployed
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: 734754909634.dkr.ecr.us-east-2.amazonaws.com/support-ticket-app:${{ github.sha }}
+          format: table
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: "true"
+          exit-code: "1"
+
+      - name: Get temporary AWS access
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::734754909634:role/github-support-ticket-deploy
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: "734754909634"
+
+      - name: Sign in to Amazon ECR
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" |
+            docker login --username AWS --password-stdin "$ECR_REGISTRY"
+
+      - name: Upload application image
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+      - name: Download the currently deployed task definition
+        run: |
+          TASK_DEFINITION=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].taskDefinition' \
+            --output text)
+
+          aws ecs describe-task-definition \
+            --task-definition "$TASK_DEFINITION" \
+            --query taskDefinition \
+            --output json > task-definition.json
+
+      - name: Put the new image into the task definition
+        id: task-definition
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: 734754909634.dkr.ecr.us-east-2.amazonaws.com/support-ticket-app:${{ github.sha }}
+
+      - name: Deploy and wait for the service
+        id: deployment
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-definition.outputs.task-definition }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          service: ${{ env.ECS_SERVICE }}
+          wait-for-service-stability: true
+
+      - name: Confirm ECS is using the new task definition
+        env:
+          EXPECTED_TASK_DEFINITION: ${{ steps.deployment.outputs.task-definition-arn }}
+        run: |
+          ACTUAL_TASK_DEFINITION=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].taskDefinition' \
+            --output text)
+
+          if [ "$ACTUAL_TASK_DEFINITION" != "$EXPECTED_TASK_DEFINITION" ]; then
+            echo "The service is not using the expected application version."
+            exit 1
+          fi
+
+     
       - name: Check application health through AWS
         run: |
           TARGET_GROUP=$(aws ecs describe-services \
