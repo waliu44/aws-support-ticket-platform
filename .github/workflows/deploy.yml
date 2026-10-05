@@ -123,12 +123,39 @@ jobs:
             exit 1
           fi
 
-      - name: Check application health
+     
+      - name: Check application health through AWS
         run: |
-          curl --fail --silent --show-error \
-            --connect-timeout 10 \
-            --max-time 30 \
-            --retry 5 \
-            --retry-delay 10 \
-            --retry-all-errors \
-            "$HEALTH_URL"
+          TARGET_GROUP=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].loadBalancers[0].targetGroupArn' \
+            --output text)
+
+          if [ -z "$TARGET_GROUP" ] || [ "$TARGET_GROUP" = "None" ]; then
+            echo "No target group was found for the application."
+            exit 1
+          fi
+
+          for attempt in {1..12}; do
+            aws elbv2 describe-target-health \
+              --target-group-arn "$TARGET_GROUP" \
+              --query 'TargetHealthDescriptions[].{Target:Target.Id,State:TargetHealth.State,Reason:TargetHealth.Reason}' \
+              --output table
+
+            HEALTHY_COUNT=$(aws elbv2 describe-target-health \
+              --target-group-arn "$TARGET_GROUP" \
+              --query "length(TargetHealthDescriptions[?TargetHealth.State=='healthy'])" \
+              --output text)
+
+            if [ "$HEALTHY_COUNT" -gt 0 ]; then
+              echo "Application health check passed."
+              exit 0
+            fi
+
+            echo "Waiting for a healthy application target..."
+            sleep 10
+          done
+
+          echo "No healthy application target was found."
+          exit 1
