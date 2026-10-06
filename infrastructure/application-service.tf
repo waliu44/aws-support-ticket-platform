@@ -77,6 +77,9 @@ resource "aws_ecs_service" "application" {
   name            = "ticket-service"
   cluster         = aws_ecs_cluster.application.id
   task_definition = aws_ecs_task_definition.application.arn
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
 
   desired_count    = var.application_task_count
   launch_type      = "FARGATE"

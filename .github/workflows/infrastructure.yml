@@ -1,0 +1,162 @@
+name: Terraform infrastructure
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: support-ticket-aws-deployment
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-2
+  TF_IN_AUTOMATION: "true"
+  TF_VAR_application_task_count: ${{ vars.TF_VAR_application_task_count }}
+  TF_VAR_application_image_tag: ${{ vars.TF_VAR_application_image_tag }}
+  TF_VAR_allowed_browser_cidr: ${{ vars.TF_VAR_allowed_browser_cidr }}
+
+jobs:
+  checks:
+    name: Run project checks
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/checks.yml
+
+  plan:
+    name: Plan infrastructure changes
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+      id-token: write
+
+    defaults:
+      run:
+        working-directory: infrastructure
+
+    outputs:
+      plan_uri: ${{ steps.save.outputs.plan_uri }}
+      plan_hash: ${{ steps.save.outputs.plan_hash }}
+
+    steps:
+      - name: Download repository code
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.16.4"
+          terraform_wrapper: false
+
+      - name: Check required settings
+        run: |
+          : "${TF_VAR_application_task_count:?Missing task count}"
+          : "${TF_VAR_application_image_tag:?Missing image tag}"
+          : "${TF_VAR_allowed_browser_cidr:?Missing browser IP}"
+
+      - name: Get planning access to AWS
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::734754909634:role/github-ticket-terraform-plan
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: "734754909634"
+
+      - name: Initialize Terraform
+        run: terraform init -input=false -lockfile=readonly
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive
+
+      - name: Validate configuration
+        run: terraform validate
+
+      - name: Create the plan
+        run: |
+          terraform plan \
+            -input=false \
+            -no-color \
+            -lock-timeout=5m \
+            -out=plan.tfplan
+
+      - name: Show the plan for review
+        run: |
+          echo '## Proposed infrastructure changes' >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          terraform show -no-color plan.tfplan >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save the plan privately in S3
+        id: save
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          PLAN_URI="s3://waliu-ticket-terraform-state-734754909634/support-ticket/dev/plans/$RUN_ID-$RUN_ATTEMPT.tfplan"
+          PLAN_HASH=$(sha256sum plan.tfplan | cut -d ' ' -f 1)
+
+          aws s3 cp plan.tfplan "$PLAN_URI" \
+            --sse AES256 \
+            --only-show-errors
+
+          echo "plan_uri=$PLAN_URI" >> "$GITHUB_OUTPUT"
+          echo "plan_hash=$PLAN_HASH" >> "$GITHUB_OUTPUT"
+
+  apply:
+    name: Apply approved infrastructure changes
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: terraform-apply
+
+    permissions:
+      contents: read
+      id-token: write
+
+    defaults:
+      run:
+        working-directory: infrastructure
+
+    steps:
+      - name: Download the same repository version
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.16.4"
+          terraform_wrapper: false
+
+      - name: Get approved apply access to AWS
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::734754909634:role/github-ticket-terraform-apply
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: "734754909634"
+
+      - name: Initialize Terraform
+        run: terraform init -input=false -lockfile=readonly
+
+      - name: Download and verify the reviewed plan
+        env:
+          PLAN_URI: ${{ needs.plan.outputs.plan_uri }}
+          PLAN_HASH: ${{ needs.plan.outputs.plan_hash }}
+        run: |
+          aws s3 cp "$PLAN_URI" plan.tfplan --only-show-errors
+          printf '%s  plan.tfplan\n' "$PLAN_HASH" | sha256sum --check -
+
+      - name: Apply the reviewed plan
+        run: |
+          terraform apply \
+            -input=false \
+            -no-color \
+            -lock-timeout=5m \
+            plan.tfplan

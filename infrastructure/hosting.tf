@@ -30,6 +30,10 @@ resource "aws_ecr_repository" "application" {
 
 resource "aws_ecs_cluster" "application" {
   name = "ticket-cluster"
+
+  tags = {
+    LabStage = "InfrastructureAutomation"
+  }
 }
 
 resource "aws_cloudwatch_log_group" "application" {
