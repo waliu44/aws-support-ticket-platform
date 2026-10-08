@@ -1,0 +1,1 @@
+﻿Checking restored database: ticket-postgres-recovery-lab.cr4m0wcswkvk.us-east-2.rds.amazonaws.com	FOUND: Snapshot recovery test	DESCRIPTION: This ticket must exist in the restored database.	PASS: The snapshot restored the expected ticket.
